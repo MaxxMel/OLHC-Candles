@@ -135,7 +135,8 @@ struct Candle {
 };
 void GetTradeData()
     {
-        filesystem::path file_path = R"(path.csv)"; // path to dataBase
+        string instrument =  R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_1000pepeusdt.csv)";
+        filesystem::path file_path = instrument;
         filesystem::directory_entry entry(file_path);
     
         ifstream data_file(entry.path()); 
@@ -156,8 +157,7 @@ void GetTradeData()
 
     }
 
-int main()
-{
+int main() {
     GetTradeData(); 
     Candle C(1723248002520544, 1723248006297364, Trades); 
     C.ShowInformation();
