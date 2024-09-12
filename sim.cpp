@@ -9,6 +9,8 @@ using namespace std;
 #include <cstdint>
 #include <sstream>
 #include <cmath>
+#include <numeric>
+
 
 struct Trade
 {
@@ -17,7 +19,17 @@ struct Trade
     double price;
     int amount;
 }; 
+
+//              ---             ///             ---             // 
+class Instrument 
+{
+    public: 
+    vector <Trade> TradesInClass;
+    Instrument (vector <Trade>& TradesInClass_) : TradesInClass(TradesInClass_) {}
+}; 
+//              --              //              --          // 
 vector <Trade> Trades; 
+
 void GetTradeData(int& trades_amount);
 
 Trade parseString(const string& input) {
@@ -126,10 +138,12 @@ class Candle {
         cout << "Buy amount: " << buy_amount << "\n";
         cout << "Sell amount: " << sell_amount << "\n";
     }
-  
+ 
 };
 void GetTradeData()
     {
+        //
+    
         string instrument =  R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_1000pepeusdt.csv)";
         filesystem::path file_path = instrument;
         filesystem::directory_entry entry(file_path);
@@ -147,109 +161,166 @@ void GetTradeData()
 
     }
 
-//          ---         ---         DANGER ZONE!            ---          ---         ---   DANGER ZONE!      ---         ---     
-struct Action {
-    Candle& data_for_decision;  // Свеча, используемая для принятия решения
-    int operation;  // Количество контрактов, которые нужно купить или продать
-
-    Action(Candle& candle, int op) : data_for_decision(candle), operation(op) {}
-
-    // Покупка/продажа по цене закрытия свечи
-    void OpByClosePrice(double& Gpnl) {
-        if (operation != 0) {
-            Gpnl += operation * data_for_decision.close_price;
-        }
-    }
-
-    // Покупка/продажа по средней цене покупок/продаж
-    void OpByAvgPrice(double& Gpnl) {
-        if (operation != 0) {
-            double avg_price = operation > 0 ? data_for_decision.avg_buy_price : data_for_decision.avg_sell_price;
-            Gpnl += operation * avg_price;
-        }
-    }
-};
-
+// A - Avarage(2), C - close(1)
 struct Strategy {
-    vector<Action> actions;
-    double pnl = 0.0;  // Финансовый результат
-    int position = 0;  // Текущая позиция
-    int position_flips = 0;  // Количество переходов позиции через 0
-    int total_amount = 0;  // Общий объем торгов
+    int now = 0 ;
+    vector<pair<char, int>> data;  // <Action, Volume>
+    vector <Candle> CandleData; 
+    // Statistics
+    double PnL = 0.0;
+    double TradedVolume = 0.0;
+    double SharpeRatio = 0.0;
+    double SortinoRatio = 0.0;
+    double MaxDrawdown = 0.0;
+    double avdHoldTime = 0.0;
+    int NumOfPosFlips = 0;
 
-    Strategy(vector<Action>& actions_) : actions(actions_) {}
-};
+    int currentPosition = 0; 
+    double currentPnL = 0.0;
+    vector<double> pnlHistory;
+    int flips = 0;            
+    int holdingTime = 0;
+    int lastFlipIndex = 0;
 
-class Simulator {
-public:
-    vector<Strategy> strategies;  // Вектор стратегий для симуляции
 
-    Simulator(const vector<Strategy>& strategies_) : strategies(strategies_) {}
+    Strategy(vector<pair<char, int>> data_, vector<Candle> CandleData_) : data(data_), CandleData(CandleData_) 
+    { if (data.size() != CandleData.size()) exit(2); }
 
-    // Запуск симулятора в режиме торговли по цене закрытия свечи
-    void RunByClosePrice() {
-        for (auto& strategy : strategies) {
-            for (auto& action : strategy.actions) {
-                int previous_position = strategy.position;
-                action.OpByClosePrice(strategy.pnl);
-                strategy.position += action.operation;
-                strategy.total_amount += abs(action.operation);
-                if ((previous_position > 0 && strategy.position < 0) || (previous_position < 0 && strategy.position > 0)) {
-                    strategy.position_flips++;
+    class iterator {
+    public:
+        Strategy& parent;
+        int current;
+
+        iterator(Strategy& p, int cr) : parent(p), current(cr) {}
+
+        
+        iterator operator++() {
+            if (current >= parent.data.size()) exit(2);
+            current++;
+            parent.now++; 
+            return *this;
+        }
+
+       
+        pair<char, int>& operator*() {
+            auto& action = parent.data[current];
+            char actionType = action.first;
+            int volume = action.second;
+
+            
+            if (actionType == 'C') {  
+                parent.executeTrade(volume, parent.CandleData[parent.now].close_price, current);
+                
+                //parent.executeTrade(volume, 100.0, current); // СВЯЗАТЬ ЦЕНУ ЗАКРЫТИЯ СО СВЕЧЕЙ
+                
+            } else if (actionType == 'A') {  
+                if (volume < 0) 
+                {
+                    parent.executeTrade(volume, parent.CandleData[parent.now].avg_sell_price, current);
+                }  else {
+                parent.executeTrade(volume, parent.CandleData[parent.now].avg_buy_price, current);
+                //parent.executeTrade(volume, 99.5, current);  // СВЯЗАТЬ СРЕДНЮЮ ЦЕНУ СО СВЕЧЕЙ
                 }
             }
+
+            return parent.data[current];
+        }
+
+        bool operator!=(const iterator& other) {
+            return current != other.current;
+        }
+    };
+
+    iterator begin() {
+        return iterator(*this, 0);
+    }
+
+    iterator end() {
+        return iterator(*this, data.size());
+    }
+
+    
+    void executeTrade(int volume, double price, int& cur) {
+        if (volume == 0) return;
+
+        
+        double prevPosition = currentPosition;
+        currentPosition += volume;
+        double tradePnL = volume * price;
+        PnL += tradePnL;
+        pnlHistory.push_back(PnL);
+
+        
+        TradedVolume += abs(volume);
+
+        
+        if ((prevPosition > 0 && currentPosition < 0) || (prevPosition < 0 && currentPosition > 0)) {
+            flips++;
+            NumOfPosFlips = flips;
+            holdingTime += cur - lastFlipIndex;
+            lastFlipIndex = cur;
         }
     }
 
-    // Запуск симулятора в режиме торговли по средней цене покупок/продаж
-    void RunByAvgPrice() {
-        for (auto& strategy : strategies) {
-            for (auto& action : strategy.actions) {
-                int previous_position = strategy.position;
-                action.OpByAvgPrice(strategy.pnl);
-                strategy.position += action.operation;
-                strategy.total_amount += abs(action.operation);
-                if ((previous_position > 0 && strategy.position < 0) || (previous_position < 0 && strategy.position > 0)) {
-                    strategy.position_flips++;
-                }
-            }
-        }
-    }
+   
+    void calculateRatios() {
+        if (pnlHistory.empty()) return;
 
-    // Вывод статистик для каждой стратегии
-    void PrintStatistics() {
-        for (size_t i = 0; i < strategies.size(); ++i) {
-            Strategy& strategy = strategies[i];
-            cout << "Strategy " << i + 1 << " Statistics:" << endl;
-            cout << "PnL: " << strategy.pnl << endl;
-            cout << "Total Traded Volume: " << strategy.total_amount << endl;
-            cout << "Position Flips: " << strategy.position_flips << endl;
-            // Здесь можно добавить расчет Sharpe ratio, Sortino ratio, max drawdown и других статистик
-            cout << endl;
-        }
-    }
+        double meanPnL = accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0) / pnlHistory.size();
+        double stdDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
+            [meanPnL](double acc, double pnl) {
+                return acc + (pnl - meanPnL) * (pnl - meanPnL);
+            }) / pnlHistory.size());
 
-    // Рассчет Sharpe Ratio для стратегии
-    double CalculateSharpeRatio(const Strategy& strategy) {
-       
-        double mean_pnl = strategy.pnl / strategy.actions.size();
-        double squared_sum = 0.0;
-        for (const auto& action : strategy.actions) {
-            squared_sum += pow(action.operation - mean_pnl, 2);
-        }
-        double stddev_pnl = sqrt(squared_sum / strategy.actions.size());
-        return mean_pnl / stddev_pnl;  // Примерный расчет
-    }
+        
+        SharpeRatio = meanPnL / stdDev;
 
-    // Рассчет Sortino Ratio для стратегии
-    double CalculateSortinoRatio(const Strategy& strategy) {
-       
-        return 0.0; 
+        
+        double downsideDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
+            [meanPnL](double acc, double pnl) {
+                return acc + ((pnl < meanPnL) ? (pnl - meanPnL) * (pnl - meanPnL) : 0);
+            }) / pnlHistory.size());
+
+        SortinoRatio = meanPnL / downsideDev;
+
+        
+        double peakPnL = pnlHistory[0];
+        for (const double& pnl : pnlHistory) {
+            if (pnl > peakPnL) peakPnL = pnl;
+            MaxDrawdown = max(MaxDrawdown, peakPnL - pnl);
+        }
+
+        
+        avdHoldTime = holdingTime / max(1, flips); 
     }
 };
-//          ---         ---         DANGER ZONE!            ---          ---         ---   DANGER ZONE!      ---         ---  
+
 
 int main() 
-{
+{   
+    GetTradeData(); 
+    Candle C1(1723248002520544, 1723248006297364, Trades); 
+    //C1.ShowInformation();
+    Candle C2(1723248002520480, 1723471322122114, Trades); 
+    //C2.ShowInformation(); 
+    vector<Candle> data_for_Strategy = {C1, C2}; 
+    vector <pair <char, int > > info = {{'A', 10}, {'C',  -5}}; 
+
+    Strategy myStrategy(info, data_for_Strategy); 
+    for (auto& action : myStrategy) {}
+
+
+    myStrategy.calculateRatios();
+    cout << "PnL: " << myStrategy.PnL << endl;
+    cout << "Traded Volume: " << myStrategy.TradedVolume << endl;
+    cout << "Sharpe Ratio: " << myStrategy.SharpeRatio << endl;
+    cout << "Sortino Ratio: " << myStrategy.SortinoRatio << endl;
+    cout << "Max Drawdown: " << myStrategy.MaxDrawdown << endl;
+    cout << "Average Holding Time: " << myStrategy.avdHoldTime << endl;
+    cout << "Position Flips: " << myStrategy.NumOfPosFlips << endl;
+    return 0; 
     
 }
+
+
+
