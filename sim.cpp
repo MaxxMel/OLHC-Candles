@@ -1,4 +1,3 @@
-using namespace std; 
 #include <string>
 #include <vector>
 #include <deque>
@@ -10,27 +9,39 @@ using namespace std;
 #include <sstream>
 #include <cmath>
 #include <numeric>
+#include <chrono>
+#include <unordered_map>
 
+using namespace std; 
+using namespace std::chrono;
 
 struct Trade
 {
-    uint64_t local_timestamp; // Время сделки в миллисекундах
-    bool side; //(true для покупок, false для продаж)
+    uint64_t local_timestamp; 
+    bool side; 
     double price;
     int amount;
-}; 
+};  
 
-//              ---             ///             ---             // 
-class Instrument 
+void GetTradeData(string instrument, vector<Trade>& v);
+
+struct LOB
 {
-    public: 
-    vector <Trade> TradesInClass;
-    Instrument (vector <Trade>& TradesInClass_) : TradesInClass(TradesInClass_) {}
-}; 
-//              --              //              --          // 
-vector <Trade> Trades; 
+    uint64_t local_timestamp; 
+    int ask_amount; 
+    int bid_amount; 
+    double ask_price; 
+    double bid_price; 
+};
 
-void GetTradeData(int& trades_amount);
+
+
+vector <Trade> Trades; 
+uint64_t minTime = UINT64_MAX;
+uint64_t maxTime = 0;
+uint64_t timeWindow  = maxTime - minTime; 
+
+
 
 Trade parseString(const string& input) {
     Trade trade;
@@ -60,9 +71,7 @@ Trade parseString(const string& input) {
 
     return trade;
 }
-// служебная 
-    uint64_t minTime = 172385279932269189;
-    uint64_t maxTime = 0;
+
 class Candle {
     public: 
     uint64_t open_time;   // Время открытия свечи
@@ -112,14 +121,12 @@ class Candle {
                     avg_buy_price += it.price * it.amount;
                     buy_trade_count++;
                 } else {
-                    // Продажа
+                    //Продажа
                     sell_amount += it.amount;
                     avg_sell_price += it.price * it.amount;
                     sell_trade_count++;
                 }
-                // служебная информация
-                if (::minTime > it.local_timestamp) ::minTime = it.local_timestamp;
-                if (::maxTime < it.local_timestamp) ::maxTime = it.local_timestamp; 
+             
             }
         }
 
@@ -138,13 +145,57 @@ class Candle {
         cout << "Buy amount: " << buy_amount << "\n";
         cout << "Sell amount: " << sell_amount << "\n";
     }
- 
+   
 };
-void GetTradeData()
+vector<Trade> GetTradeData(string instrument); 
+
+void CountMinAndMaxTime(vector<Trade>& data, uint64_t& TW)
+{
+    for (const auto it : data)
     {
-        //
+        if (::minTime > it.local_timestamp) ::minTime = it.local_timestamp;
+        if (::maxTime < it.local_timestamp) ::maxTime = it.local_timestamp; 
+        TW = maxTime - minTime; 
+    }    
+}
+
+struct Instrument_Trades {
+    string path_to_data; 
+    uint64_t T; 
+    vector<Trade> data; 
+    vector<Candle> Candles_data; 
+    int CandlesAmount; 
     
-        string instrument =  R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_1000pepeusdt.csv)";
+    uint64_t TW; 
+    uint64_t MaxT;
+    uint64_t MinT;
+
+    
+    Instrument_Trades(string p, uint64_t T) : path_to_data(p), T(T) {
+
+        data = GetTradeData(path_to_data);
+
+        MinT = UINT64_MAX;
+        MaxT = 0;
+        for (const auto& trade : data) {
+            if (trade.local_timestamp < MinT) MinT = trade.local_timestamp;
+            if (trade.local_timestamp > MaxT) MaxT = trade.local_timestamp;
+        }
+
+        TW = MaxT - MinT;
+        CandlesAmount = TW / T + 1;
+
+        for (int i = 0; i < CandlesAmount; i++) {
+            Candles_data.push_back(Candle(MinT + T * i, T, data));
+        }
+    }
+};
+
+
+
+void GetTradeData(string instrument, vector<Trade>& v)
+    {
+
         filesystem::path file_path = instrument;
         filesystem::directory_entry entry(file_path);
     
@@ -156,17 +207,36 @@ void GetTradeData()
         while (getline(data_file, line))
         {
             Trade T = parseString(line);
-            ::Trades.push_back(T);    
+            v.push_back(T);    
         }
-
     }
 
+vector <Trade> GetTradeData(string instrument)
+{
+    vector <Trade> v; 
+    filesystem::path file_path = instrument;
+    filesystem::directory_entry entry(file_path);
+    
+    ifstream data_file(entry.path()); 
+    string line;
+
+    getline(data_file, line);
+ 
+    while (getline(data_file, line))
+        {
+            Trade T = parseString(line);
+            v.push_back(T);    
+        }
+    return v;     
+}
 // A - Avarage(2), C - close(1)
-struct Strategy {
+
+struct Strategy_back {
     int now = 0 ;
+    vector <vector <pair<char, int> > > Actions_storage; 
     vector<pair<char, int>> data;  // <Action, Volume>
     vector <Candle> CandleData; 
-    // Statistics
+
     double PnL = 0.0;
     double TradedVolume = 0.0;
     double SharpeRatio = 0.0;
@@ -183,15 +253,15 @@ struct Strategy {
     int lastFlipIndex = 0;
 
 
-    Strategy(vector<pair<char, int>> data_, vector<Candle> CandleData_) : data(data_), CandleData(CandleData_) 
+    Strategy_back(vector<pair<char, int>> data_, vector<Candle> CandleData_) : data(data_), CandleData(CandleData_) 
     { if (data.size() != CandleData.size()) exit(2); }
 
     class iterator {
     public:
-        Strategy& parent;
+        Strategy_back& parent;
         int current;
 
-        iterator(Strategy& p, int cr) : parent(p), current(cr) {}
+        iterator(Strategy_back& p, int cr) : parent(p), current(cr) {}
 
         
         iterator operator++() {
@@ -211,7 +281,7 @@ struct Strategy {
             if (actionType == 'C') {  
                 parent.executeTrade(volume, parent.CandleData[parent.now].close_price, current);
                 
-                //parent.executeTrade(volume, 100.0, current); // СВЯЗАТЬ ЦЕНУ ЗАКРЫТИЯ СО СВЕЧЕЙ
+                
                 
             } else if (actionType == 'A') {  
                 if (volume < 0) 
@@ -219,7 +289,7 @@ struct Strategy {
                     parent.executeTrade(volume, parent.CandleData[parent.now].avg_sell_price, current);
                 }  else {
                 parent.executeTrade(volume, parent.CandleData[parent.now].avg_buy_price, current);
-                //parent.executeTrade(volume, 99.5, current);  // СВЯЗАТЬ СРЕДНЮЮ ЦЕНУ СО СВЕЧЕЙ
+                
                 }
             }
 
@@ -241,86 +311,141 @@ struct Strategy {
 
     
     void executeTrade(int volume, double price, int& cur) {
-        if (volume == 0) return;
+    if (volume == 0) return;
 
-        
-        double prevPosition = currentPosition;
-        currentPosition += volume;
-        double tradePnL = volume * price;
-        PnL += tradePnL;
-        pnlHistory.push_back(PnL);
+    double prevPosition = currentPosition;
+    currentPosition += volume;
+    double tradePnL = volume * price;
+    PnL += tradePnL;
+    pnlHistory.push_back(PnL);
 
-        
-        TradedVolume += abs(volume);
+    TradedVolume += abs(volume);
 
-        
-        if ((prevPosition > 0 && currentPosition < 0) || (prevPosition < 0 && currentPosition > 0)) {
-            flips++;
-            NumOfPosFlips = flips;
-            holdingTime += cur - lastFlipIndex;
-            lastFlipIndex = cur;
-        }
+    if ((prevPosition > 0 && currentPosition < 0) || (prevPosition < 0 && currentPosition > 0)) {
+        flips++;
+        NumOfPosFlips = flips;
+        holdingTime += cur - lastFlipIndex; // Accumulate holding time
+        lastFlipIndex = cur; // Update last flip index
+    }
+}
+
+void calculateRatios() {
+    if (pnlHistory.empty()) return;
+
+    double meanPnL = accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0) / pnlHistory.size();
+    double stdDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
+        [meanPnL](double acc, double pnl) {
+            return acc + (pnl - meanPnL) * (pnl - meanPnL);
+        }) / pnlHistory.size());
+
+    SharpeRatio = meanPnL / stdDev;
+
+    double downsideDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
+        [meanPnL](double acc, double pnl) {
+            return acc + ((pnl < meanPnL) ? (pnl - meanPnL) * (pnl - meanPnL) : 0);
+        }) / pnlHistory.size());
+
+    SortinoRatio = meanPnL / downsideDev;
+
+    double peakPnL = pnlHistory[0];
+    for (const double& pnl : pnlHistory) {
+        if (pnl > peakPnL) peakPnL = pnl;
+        MaxDrawdown = max(MaxDrawdown, peakPnL - pnl);
     }
 
-   
-    void calculateRatios() {
-        if (pnlHistory.empty()) return;
-
-        double meanPnL = accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0) / pnlHistory.size();
-        double stdDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
-            [meanPnL](double acc, double pnl) {
-                return acc + (pnl - meanPnL) * (pnl - meanPnL);
-            }) / pnlHistory.size());
-
-        
-        SharpeRatio = meanPnL / stdDev;
-
-        
-        double downsideDev = sqrt(accumulate(pnlHistory.begin(), pnlHistory.end(), 0.0,
-            [meanPnL](double acc, double pnl) {
-                return acc + ((pnl < meanPnL) ? (pnl - meanPnL) * (pnl - meanPnL) : 0);
-            }) / pnlHistory.size());
-
-        SortinoRatio = meanPnL / downsideDev;
-
-        
-        double peakPnL = pnlHistory[0];
-        for (const double& pnl : pnlHistory) {
-            if (pnl > peakPnL) peakPnL = pnl;
-            MaxDrawdown = max(MaxDrawdown, peakPnL - pnl);
-        }
-
-        
-        avdHoldTime = holdingTime / max(1, flips); 
-    }
+    avdHoldTime = (flips > 0) ? static_cast<double>(holdingTime) / flips : 0.0;  // Calculate average holding time safely
+}
+void DisplayRes()
+{
+    cout << "PnL: " << this->PnL << endl;
+    cout << "Traded Volume: " << this->TradedVolume << endl;
+    cout << "Sharpe Ratio: " << this->SharpeRatio << endl;
+    cout << "Sortino Ratio: " << this->SortinoRatio << endl;
+    cout << "Max Drawdown: " << this->MaxDrawdown << endl;
+    cout << "Average Holding Time: " << this->avdHoldTime << endl;
+    cout << "Position Flips: " << this->NumOfPosFlips << endl;
+}
 };
+class Strategy_for_Instrument
+{
+    public: 
+    vector <Strategy_back> Strategies; 
 
+    Strategy_for_Instrument(vector <Strategy_back> Strategies_) : Strategies(Strategies_) 
+    {}
+
+    void CountResultsForStrategy(int index)
+    {
+        if (index >= Strategies.size()) exit(3);
+        for (auto& action : Strategies[index]) {} 
+        Strategies[index].calculateRatios(); 
+    }  
+    void DisplayResForStrategy(int index)
+    {
+        Strategies[index].DisplayRes(); 
+    }
+    
+}; 
+
+class Simulator
+{
+    public: 
+    vector <Strategy_for_Instrument> Global_data; 
+
+    void addStrategy(Strategy_for_Instrument obj)
+    {
+        Global_data.push_back(obj); 
+    }
+    // Вывод результатов по всем стратегиям для всех инструментов
+    void DisplayResultsForAllInstruments() {
+        for (size_t i = 0; i < Global_data.size(); i++) {
+            cout << "Instrument " << i + 1 << " results:\n";
+            DisplayResultsForInstrument(i);
+            cout << '\n';
+        }
+    }
+
+    // Вывод результатов по одной стратегии для указанного инструмента
+    void DisplayResultsForInstrument(int instrument_index) {
+        if (instrument_index >= Global_data.size()) {
+            cout << "Invalid instrument index.\n";
+            return;
+        }
+        
+        for (size_t i = 0; i < Global_data[instrument_index].Strategies.size(); i++) {
+            cout << "Strategy " << i + 1 << " results:\n";
+            Global_data[instrument_index].DisplayResForStrategy(i);
+            cout << '\n';
+        }
+    }
+
+    
+};
 
 int main() 
 {   
-    GetTradeData(); 
-    Candle C1(1723248002520544, 1723248006297364, Trades); 
-    //C1.ShowInformation();
-    Candle C2(1723248002520480, 1723471322122114, Trades); 
-    //C2.ShowInformation(); 
-    vector<Candle> data_for_Strategy = {C1, C2}; 
-    vector <pair <char, int > > info = {{'A', 10}, {'C',  -5}}; 
+    Instrument_Trades Ins(R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_dogeusdt.csv)", 201598305508); 
+    for (auto t : Ins.Candles_data)
+    {
+        cout << '\n'; 
+        t.ShowInformation();
+        cout << '\n'; 
+    }
 
-    Strategy myStrategy(info, data_for_Strategy); 
-    for (auto& action : myStrategy) {}
-
-
-    myStrategy.calculateRatios();
-    cout << "PnL: " << myStrategy.PnL << endl;
-    cout << "Traded Volume: " << myStrategy.TradedVolume << endl;
-    cout << "Sharpe Ratio: " << myStrategy.SharpeRatio << endl;
-    cout << "Sortino Ratio: " << myStrategy.SortinoRatio << endl;
-    cout << "Max Drawdown: " << myStrategy.MaxDrawdown << endl;
-    cout << "Average Holding Time: " << myStrategy.avdHoldTime << endl;
-    cout << "Position Flips: " << myStrategy.NumOfPosFlips << endl;
+    vector <pair <char, int > > info = {{'A', 10}, {'C',  -5}, {'A', 8}};
+    Strategy_back S1(info, Ins.Candles_data);  
+    vector <Strategy_back> v = {S1}; 
+    //Strategy myStrategy(info, data_for_Strategy); 
+    Strategy_for_Instrument SI1(v); 
+    SI1.CountResultsForStrategy(0); 
+    SI1.DisplayResForStrategy(0); 
+    Simulator sim; 
+    sim.addStrategy(SI1);
+    sim.DisplayResultsForAllInstruments();
     return 0; 
     
 }
+
 
 
 
