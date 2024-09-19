@@ -1,3 +1,4 @@
+// Add funcs and dodelat logiku
 #include <string>
 #include <vector>
 #include <deque>
