@@ -1,0 +1,25 @@
+int AnalyzeKnownLobDataAndMakeDecision() 
+{
+    int period = 7; 
+    // If both bid and ask amounts are growing, it indicates market stability; hold off on trading.
+    if (MidBidAmountIsGrow(mid_bid_amount, period) && MidAskAmountIsGrow(mid_ask_amount, period)) 
+    {
+        return 3;  // Do nothing
+    }
+    // If both bid and ask amounts are dropping, and the market might be unstable:
+    else if (MidBidAmountIsDrop(mid_bid_amount, period) && MidAskAmountIsDrop(mid_ask_amount, period)) 
+    {
+        // If bid prices are growing and ask prices are dropping, it suggests a buying opportunity.
+        if (MidBidPriceIsGrow(mid_bid_price, period) && MidAskPriceIsDrop(mid_ask_price, period)) 
+        {
+            return 1;  // Buy
+        }
+        // If bid prices are dropping and ask prices are growing, it suggests a selling opportunity.
+        else if (MidBidPriceIsDrop(mid_bid_price, period) && MidAskPriceIsGrow(mid_ask_price, period)) 
+        {
+            return 2;  // Sell
+        }
+    }
+    // Otherwise, do nothing by default
+    return 3;  // Do nothing
+}
