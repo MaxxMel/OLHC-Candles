@@ -11,6 +11,7 @@
 #include <numeric>
 #include <chrono>
 #include <unordered_map>
+#include <iomanip>
 
 using namespace std; 
 using namespace std::chrono;
@@ -238,7 +239,7 @@ class Candle
             buy_amount += data_about_trade.amount;
 
             avg_buy_price = buys_sum_money / buy_trade_count;
-            //avg_buy_price += data_about_trade.price * data_about_trade.amount;  
+            
              
         } else {
                // ПОФИКСИТЬ avg
@@ -248,7 +249,7 @@ class Candle
 
             sell_amount += data_about_trade.amount;
             avg_sell_price = sell_sum_money / sell_trade_count; 
-            //avg_sell_price += data_about_trade.price * data_about_trade.amount;
+           
         }
         }else 
         {
@@ -273,447 +274,10 @@ class Candle
     }
     
 }; 
-bool MidBidAmountIsDrop(vector<double> Amid_bid_amount, int period)
-{
-     if (Amid_bid_amount.size() < 7) return false; 
+//  -   -   --  -   -   -   -   -   -   --  -   -   -   -   -   -
+// DEFAULT
+// -    -   -   -   -   -   --  -   -   -   -   -   -   -   --  -   
 
-    // Проверка на падение среднего объема покупок за последние 7 сделок
-    bool drop_detected = true;
-    for (int i = Amid_bid_amount.size() - 7; i < Amid_bid_amount.size() - 1; ++i) 
-    {
-        if (Amid_bid_amount[i] <= Amid_bid_amount[i+1]) {
-            drop_detected = false;
-            break; 
-        }
-    }
-
-    return drop_detected; 
-}
-bool MidAskAmountIsDrop(vector<double> Amid_ask_amount, int period)
-{
-    if (Amid_ask_amount.size() < 7) return false; 
-
-    // Проверка на падение среднего объема покупок за последние 7 сделок
-    bool drop_detected = true;
-    for (int i = Amid_ask_amount.size() - 7; i < Amid_ask_amount.size() - 1; ++i) 
-    {
-        if (Amid_ask_amount[i] <= Amid_ask_amount[i+1]) {
-            drop_detected = false;
-            break; 
-        }
-    }
-
-    return drop_detected; 
-}
-
-bool MidAskAmountIsGrow(vector<double> Amid_ask_amount, int period)
-{
-    if (Amid_ask_amount.size() < period)
-    {
-        cerr << "Недостаточно данных для анализа!" << endl;
-        exit(3);  // return false;
-    }
-    double prev_sum = 0;
-    double current_sum = 0;
-    // Суммируем значения до текущего периода
-    for (int i = Amid_ask_amount.size() - period - 1; i < Amid_ask_amount.size() - 1; i++) {
-        prev_sum += Amid_ask_amount[i];
-    }
-
-    // Суммируем значения за текущий период
-    for (int i = Amid_ask_amount.size() - period; i < Amid_ask_amount.size(); i++) {
-        current_sum += Amid_ask_amount[i];
-    }
-    double prev_avg = prev_sum / period;
-    double current_avg = current_sum / period;
-
-    if (current_avg > prev_avg) {
-        return true;
-    } else {
-        return false;         
-    }
-}
-bool MidBidAmountIsGrow(vector<double> Amid_bid_amount, int period)
-{
-    if (Amid_bid_amount.size() < period)
-    {
-        cerr << "Недостаточно данных для анализа!" << endl;
-        exit(3); // return false
-    }
-    double prev_sum = 0;
-    double current_sum = 0;
-    // Суммируем значения до текущего периода
-    for (int i = Amid_bid_amount.size() - period - 1; i < Amid_bid_amount.size() - 1; i++) {
-        prev_sum += Amid_bid_amount[i];
-    }
-
-    // Суммируем значения за текущий период
-    for (int i = Amid_bid_amount.size() - period; i < Amid_bid_amount.size(); i++) {
-        current_sum += Amid_bid_amount[i];
-    }
-    double prev_avg = prev_sum / period;
-    double current_avg = current_sum / period;
-
-    if (current_avg > prev_avg) {
-        return true;
-    } else {
-        return false;         
-    }
-}
-
-struct knownLobHistory
-{
-    vector<LOB> last_lobs;
-    vector<double> spreads;
-    vector<double> mid_bid_amount;
-    vector<double> mid_ask_amount;
-    double total_ask_amount = 0;  // Сумма ask_amount всех объектов в last_lobs
-    double total_bid_amount = 0;  // Сумма bid_amount всех объектов в last_lobs
-
-    void update(const LOB& obj)
-    {
-        // Добавляем новый LOB в историю
-        last_lobs.push_back(obj);
-
-        // Обновляем спред
-        spreads.push_back(obj.ask_price - obj.bid_price);
-
-        // Обновляем суммы ask и bid
-        total_ask_amount += obj.ask_amount;
-        total_bid_amount += obj.bid_amount;
-
-        // Рассчитываем средние значения и добавляем их в соответствующие векторы
-        int num_lobs = last_lobs.size();  // Количество элементов в истории
-
-        mid_ask_amount.push_back(total_ask_amount / num_lobs);
-        mid_bid_amount.push_back(total_bid_amount / num_lobs);
-    }
-    
-    void AnalyzeKnownLobDataAndMakeDecision() // Анализ инфы и принятие решения покупать сейчас или нет
-    {
-        int period (7); 
-        if (MidBidAmountIsGrow(mid_bid_amount, period) && MidAskAmountIsGrow(mid_ask_amount, period)) // логика есл и растет объем и ask и bid // рынок стабилен // цена сильно не поменяется 
-            {}
-        else if (MidBidAmountIsDrop(mid_bid_amount, period) && MidAskAmountIsDrop(mid_ask_amount, period)) // объяемы падают, рынок не стабилен
-            {
-                // Анализ цен заполнить логику 
-            }
-        else if (MidAskAmountIsDrop(mid_ask_amount, period) && MidBidAmountIsGrow(mid_bid_amount, period)) // объемы продаж падают а покупок растут => цена пойдет наверх
-            {
-                // покупаем сейчас или по цене закрытия  заполнить логику
-            }
-        else if (MidAskAmountIsGrow(mid_ask_amount, period) && MidBidAmountIsDrop(mid_bid_amount, period)) // объемы продаж растут а покупок падают => цена пойдет вних 
-            {
-                // продаем сейчас или по цене закрытрия заполнить логику
-            }
-    
-    }
-};
-
-
-
-
-class Simulator 
-{
-public: 
-    double PnL = 0; 
-    double TradedVolume = 0;
-    double SharpeRatio = 0; 
-    double SortinoRatio = 0; 
-    double maxDrawDown = 0; // max draw down
-    double AvgHoldTime = 0;
-    int NumPosFlips = 0;
-
-    vector<int> actions;
-    vector<bool> Actions_completed; 
-
-    double current_position = 0;  // Текущая позиция (объем контрактов)
-    double position_open_price = 0;  // Цена открытия позиции
-
-    uint64_t T; 
-    InstrumentData ID; 
-
-    vector<Candle> CandlesHistory; 
-    vector<uint64_t> Candles_Boarder_Timestamps; 
-    int builded_Candles_num = 0; 
-    knownLobHistory orderbook; 
-
-    Simulator(uint64_t T, InstrumentData& ID_, vector<int> actions_) 
-        : T(T), ID(ID_), actions(actions_)
-    {
-        for (int i = 0; i < actions.size(); i++) 
-            Actions_completed.push_back(false); 
-    }
-
-    Candle& CurCandleOf(vector <Candle>& CandlesHistory)
-    {
-        return CandlesHistory.back();
-    }
-    
-    void ExecuteAction(int action, const Candle& candle)
-    {
-        if (action > 0)  // Покупка
-        {
-            // Обновляем PnL для новой покупки
-            PnL -= action * candle.avg_buy_price;  // Тратим деньги на покупку
-            TradedVolume += action;  // Увеличиваем объём торговли
-            current_position += action;  // Увеличиваем текущую позицию
-            position_open_price = candle.avg_buy_price;  // Обновляем цену открытия
-        }
-        else if (action < 0)  // Продажа
-        {
-            // Обновляем PnL при продаже
-            PnL += (-action) * candle.avg_sell_price;  // Получаем прибыль от продажи
-            TradedVolume += (-action);  // Увеличиваем объём торговли
-            current_position += action;  // Закрываем часть или всю позицию
-        }
-    }
-
-    void ClosePosition(const Candle& candle)
-    {
-        if (current_position != 0) 
-        {
-            // Закрываем оставшуюся позицию по текущей цене
-            PnL += current_position * candle.close_price;  
-            current_position = 0;  // Сбрасываем позицию
-        }
-    }
-
-    void IterateData()
-    {
-        for (auto current_comb : ID.fullSortedData)
-        {
-            if (current_comb.is_trade)
-            {
-                if (CandlesHistory.empty()) 
-                {
-                    CandlesHistory.push_back(Candle(current_comb.local_timestamp, T)); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    builded_Candles_num++; 
-                }
-                else if (CurCandleOf(CandlesHistory).isFinished)
-                {
-                    CandlesHistory.push_back(Candle(CurCandleOf(CandlesHistory).expected_close_time, T)); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(CandlesHistory[CandlesHistory.size() - 2].last_trade); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    builded_Candles_num++; 
-
-                    if (!Actions_completed[builded_Candles_num - 1])
-                    {
-                        int act_inf = actions[builded_Candles_num - 1]; 
-                        Actions_completed[builded_Candles_num - 1] = true; 
-                        ExecuteAction(act_inf, CurCandleOf(CandlesHistory));
-                        cout << "PnL: " << PnL << endl; 
-                    }
-                }
-                else
-                {
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    if (CurCandleOf(CandlesHistory).isFinished) 
-                        Candles_Boarder_Timestamps.push_back(CurCandleOf(CandlesHistory).expected_close_time); 
-                }
-            } 
-            else  // Обработка если это LOB
-            {
-                LOB curLobData = current_comb.lob; 
-                orderbook.update(curLobData); 
-
-                /*
-                // Вставляем вместо //VVV
-if (!Actions_completed[builded_Candles_num - 1])
-{
-    // Получаем решение на основе данных из ордербука
-    int lob_decision = orderbook.AnalyzeKnownLobDataAndMakeDecision();
-
-    // Пример того, как можно использовать решение:
-    if (lob_decision == 1)  // Покупаем, если решение ордербука предполагает покупку
-    {
-        ExecuteAction(actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
-    }
-    else if (lob_decision == 2)  // Продаем, если решение предполагает продажу
-    {
-        ExecuteAction(actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
-    }
-    else  // Если решение ордербука предполагает "ничего не делать"
-    {
-        // Действие можно пропустить или дождаться конца свечи, чтобы выполнить по close_price
-        cout << "Ждем до конца свечи..." << endl;
-    }
-
-    // Обновляем статус действия как выполненное
-    Actions_completed[builded_Candles_num - 1] = true;
-    cout << "PnL: " << PnL << endl;
-}
-
-                */
-                // -    -   -   -   -   -   -   -   --  -   -   - При соглассии с Analyze.. 
-                if (!Actions_completed[builded_Candles_num - 1])
-                {
-                    int act_inf = actions[builded_Candles_num - 1];
-                    Actions_completed[builded_Candles_num - 1] = true; 
-                    ExecuteAction(act_inf, CurCandleOf(CandlesHistory));
-                    cout << "PnL: " << PnL << endl; 
-                }
-                // -        -   --  -   -   -   --  -       
-            }
-        }
-
-
-        // Закрытие позиции после окончания симуляции
-        if (!CandlesHistory.empty()) 
-            ClosePosition(CurCandleOf(CandlesHistory));
-    }
-};
-
-
-
-
-int main()
-{
-    string path_Trade = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_dogeusdt.csv)"; 
-    string path_LOB = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\bbo_dogeusdt.csv)";
-
-    InstrumentData ID0(path_Trade, path_LOB);  
-    vector<int> actions = {1, -2, 0}; 
-    Simulator sim(228232434327, ID0, actions); 
-   
-    sim.IterateData(); 
-    //cout << sim.PnL; 
-    cout << sim.builded_Candles_num << endl; 
-    for(auto it : sim.CandlesHistory)
-    {
-    it.ShowInformation(); 
-        cout << '\n'; 
-
-    }
-    cout << sim.PnL << endl; 
-    for (auto it : sim.Actions_completed) cout << it << "   "; 
-    return 0; 
-}
-
-
-
-/*
-class Simulator 
-{
-    public: 
-    double PnL = 0; 
-    double TradedVolume = 0;
-    double SharpeRatio = 0; 
-    double SortinoRatio = 0; 
-    double maxDrawDown = 0; // max draw down
-    double AvgHoldTime = 0;
-    int NumPosFlips =0 ; 
-
-    vector<int> actions;
-    vector<bool> Actions_completed; 
-
-
-    uint64_t T; 
-    InstrumentData ID; 
-
-    vector<Candle> CandlesHistory; 
-    vector<uint64_t> Candles_Boarder_Timestamps; 
-    int builded_Candles_num = 0; 
-    knownLobHistory orderbook; 
-
-    Simulator(uint64_t T, InstrumentData& ID_, vector<int> actions_) : T(T), ID(ID_), actions(actions_)
-    {
-        for (int i(0); i < actions.size(); i++) Actions_completed.push_back(false); 
-        //if (actions.size() != (ID.Trades.back().local_timestamp - ID.Trades[0].local_timestamp) / T + 1) cerr << "Data is not correnct" << endl;  
-    }
-
-    Candle& CurCandleOf(vector <Candle>& CandlesHistory)
-    {
-        return CandlesHistory.back();
-    }
-    
-    void IterateData()
-    {
-        for (auto current_comb : ID.fullSortedData)
-        {
-            if (current_comb.is_trade)
-            {
-                
-                if (CandlesHistory.empty()) 
-                {
-                    CandlesHistory.push_back(Candle(current_comb.local_timestamp, T)); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    builded_Candles_num++; 
-                }
-                else if (CurCandleOf(CandlesHistory).isFinished == true)
-                {
-                    
-                    CandlesHistory.push_back(Candle(CurCandleOf(CandlesHistory).expected_close_time, T)); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(CandlesHistory[CandlesHistory.size() - 2].last_trade); 
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    builded_Candles_num++; 
-
-
-
-
-                    if (!Actions_completed[builded_Candles_num - 1])
-                    {
-                        int act_inf = actions[builded_Candles_num - 1]; 
-                        Actions_completed[builded_Candles_num - 1] = true; 
-                        if (act_inf > 0)
-                        {
-                            PnL += -1 * (act_inf) * CurCandleOf(CandlesHistory).close_price; 
-                        }else if (act_inf < 0)
-                        {
-                            PnL += act_inf * CurCandleOf(CandlesHistory).close_price; 
-                        }
-                        cout << PnL << endl; 
-                    }
-                     
-                
-                } else
-                {
-                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
-                    if (CurCandleOf(CandlesHistory).isFinished) Candles_Boarder_Timestamps.push_back(CurCandleOf(CandlesHistory).expected_close_time); 
-                }
-            } else // обработка если это LOB
-            {
-                LOB curLobData = current_comb.lob; 
-                orderbook.update(curLobData); 
-
-
-
-
-
-                if (!Actions_completed[builded_Candles_num - 1])
-                {
-                    int act_inf = actions[builded_Candles_num -1];
-
-                    Actions_completed[builded_Candles_num - 1] = true; 
-                    if (act_inf > 0)  //+10 - купить 10
-                    {
-                       PnL += ( -(act_inf)) * CurCandleOf(CandlesHistory).avg_buy_price; 
-                    }else if (act_inf < 0){
-                        PnL += act_inf * CurCandleOf(CandlesHistory).avg_sell_price;
-                    }else   
-                    {
-                        
-                    }
-                    cout << PnL << endl; 
-                }
-             
-
-
-
-
-            }
-        }
-    }
-}; 
-*/
-
-
-
-
-
-
-/*
 bool MidBidAmountIsDrop(vector<double> Amid_bid_amount, int period)
 {
      if (Amid_bid_amount.size() < 7) return false; 
@@ -767,7 +331,7 @@ bool MidAskAmountIsGrow(vector<double> Amid_ask_amount, int period)
     double prev_avg = prev_sum / period;
     double current_avg = current_sum / period;
 
-    if (current_avg > prev_avg) {
+    if (current_avg > 1.05 *prev_avg) {
         return true;
     } else {
         return false;         
@@ -794,7 +358,7 @@ bool MidBidAmountIsGrow(vector<double> Amid_bid_amount, int period)
     double prev_avg = prev_sum / period;
     double current_avg = current_sum / period;
 
-    if (current_avg > prev_avg) {
+    if (current_avg >1.05 * prev_avg) {
         return true;
     } else {
         return false;         
@@ -821,7 +385,7 @@ bool MidBidPriceIsGrow(vector<double> Amid_bid_price, int period)
     double prev_avg = prev_sum / period;
     double current_avg = current_sum / period;
 
-    if (current_avg > prev_avg) {
+    if (current_avg > 1.05 *prev_avg) {
         return true;
     } else {
         return false;         
@@ -848,7 +412,7 @@ bool MidAskPriceIsGrow(vector<double> Amid_ask_price, int period)
     double prev_avg = prev_sum / period;
     double current_avg = current_sum / period;
 
-    if (current_avg > prev_avg) {
+    if (current_avg > 1.05 * prev_avg) {
         return true;
     } else {
         return false;         
@@ -968,4 +532,225 @@ struct knownLobHistory
     return 3;
     }
 };
-*/
+struct StrategyAndFinancialData
+{
+    double PnL = 0; 
+    double TradedVolume = 0;
+    double SharpeRatio = 0; 
+    double SortinoRatio = 0; 
+    double maxDrawDown = -100000000; // max draw down
+    double AvgHoldTime = 0;
+    int NumPosFlips = 0;
+    
+    vector<double> returns;
+    vector<double> negative_returns;
+    double previous_pnl = 0.0;
+    double peak_pnl = 0.0;
+    double holding_time_sum = 0.0;
+    int position_changes = 0;
+   // int current_position = 0;  // 0: нет позиции, 1: long, -1: short
+    double lastActionTime = 0.0;
+
+
+    double current_position = 0;  // Текущая позиция (объем контрактов)
+    double position_open_price = 0;
+
+    vector<int> actions;
+    vector<bool> Actions_completed; 
+    StrategyAndFinancialData(vector<int> actions_) : actions(actions_ )
+    {
+        for (int i(0); i < actions.size(); i++) Actions_completed.push_back(false);  
+    }
+
+    void CalMaxDrawDown(double CurPnL)
+    {
+        if (maxDrawDown > CurPnL) maxDrawDown = CurPnL; 
+    }
+
+    void DataOut()
+    {
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Strategy and Financial Data:\n";
+        std::cout << "PnL: " << PnL << "\n";
+        std::cout << "Traded Volume: " << TradedVolume << "\n";
+        std::cout << "Sharpe Ratio: " << SharpeRatio << "\n";
+        std::cout << "Sortino Ratio: " << SortinoRatio << "\n";
+        std::cout << "Max Drawdown: " << maxDrawDown << "\n";
+        std::cout << "Average Hold Time: " << AvgHoldTime << "\n";
+        std::cout << "Number of Position Flips: " << NumPosFlips << "\n";
+    }
+    
+};
+
+class Simulator 
+{
+public: 
+    vector<StrategyAndFinancialData> strategies;  
+    int currentStrategy = 0; 
+    vector <InstrumentData> Portfel; 
+    int curInstrument = 0;
+
+
+    uint64_t T; 
+    InstrumentData ID = Portfel[curInstrument]; 
+    
+    
+    vector<Candle> CandlesHistory; 
+    vector<uint64_t> Candles_Boarder_Timestamps; 
+    int builded_Candles_num = 0; 
+    knownLobHistory orderbook; 
+
+
+    Simulator(uint64_t T, InstrumentData& ID_, vector<int> actions_) 
+        : T(T), ID(ID_)
+        {
+        strategies.push_back(StrategyAndFinancialData (actions_)); 
+        }
+
+    Candle& CurCandleOf(vector <Candle>& CandlesHistory)
+    {
+        return CandlesHistory.back();
+    }
+    void AddStrategy(vector<int> actions_)
+        {
+            strategies.push_back(StrategyAndFinancialData (actions_)); 
+            currentStrategy++; 
+        }
+    void ExecuteAction(int action, const Candle& candle)
+    {
+        if (action > 0)  // Покупка
+        {
+            // Обновляем PnL для новой покупки
+            strategies[currentStrategy].PnL -= action * candle.avg_buy_price;  // Тратим деньги на покупку
+            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL); 
+
+            strategies[currentStrategy].TradedVolume += action;  // Увеличиваем объём торговли
+            strategies[currentStrategy].current_position += action;  // Увеличиваем текущую позицию
+            strategies[currentStrategy].position_open_price = candle.avg_buy_price;  // Обновляем цену открытия
+        }
+        else if (action < 0)  // Продажа
+        {
+            // Обновляем PnL при продаже
+            strategies[currentStrategy].PnL += (-action) * candle.avg_sell_price;  // Получаем прибыль от продажи
+            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL); 
+
+            strategies[currentStrategy].TradedVolume += (-action);  // Увеличиваем объём торговли
+            strategies[currentStrategy].current_position += action;  // Закрываем часть или всю позицию
+        }
+    }
+ 
+   
+
+    void ClosePosition(const Candle& candle)
+    {
+        if (strategies[currentStrategy].current_position != 0) 
+        {
+            // Закрываем оставшуюся позицию по текущей цене
+            strategies[currentStrategy].PnL += strategies[currentStrategy].current_position * candle.close_price;  
+            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL); 
+
+            strategies[currentStrategy].current_position = 0;  // Сбрасываем позицию
+        }
+    }
+
+    void IterateData()
+    {
+        for (auto current_comb : ID.fullSortedData)
+        {
+            if (current_comb.is_trade)
+            {
+                if (CandlesHistory.empty()) 
+                {
+                    CandlesHistory.push_back(Candle(current_comb.local_timestamp, T)); 
+                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
+                    builded_Candles_num++; 
+                }
+                else if (CurCandleOf(CandlesHistory).isFinished)
+                {
+                    CandlesHistory.push_back(Candle(CurCandleOf(CandlesHistory).expected_close_time, T)); 
+                    CurCandleOf(CandlesHistory).editCandleByTrade(CandlesHistory[CandlesHistory.size() - 2].last_trade); 
+                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
+                    builded_Candles_num++; 
+
+                    if (!strategies[currentStrategy].Actions_completed[builded_Candles_num - 1])
+                    {
+                        int act_inf = strategies[currentStrategy].actions[builded_Candles_num - 1]; 
+                        strategies[currentStrategy].Actions_completed[builded_Candles_num - 1] = true; 
+                        ExecuteAction(act_inf, CurCandleOf(CandlesHistory));
+                        cout << "PnL: " << strategies[currentStrategy].PnL << endl; 
+                    }
+                }
+                else
+                {
+                    CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
+                    if (CurCandleOf(CandlesHistory).isFinished) 
+                        Candles_Boarder_Timestamps.push_back(CurCandleOf(CandlesHistory).expected_close_time); 
+                }
+            } 
+            else  // Обработка если это LOB
+            {
+                LOB curLobData = current_comb.lob; 
+                orderbook.update(curLobData); 
+
+                
+                // Вставляем вместо //VVV
+                if (!strategies[currentStrategy].Actions_completed[builded_Candles_num - 1])
+                    {
+                    // Получаем решение на основе данных из ордербука
+                    int lob_decision = orderbook.AnalyzeKnownLobDataAndMakeDecision();
+
+                    // Пример того, как можно использовать решение:
+                    if (lob_decision == 1)  // Покупаем, если решение ордербука предполагает покупку
+                        {
+                            ExecuteAction(strategies[currentStrategy].actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
+                        }
+                    else if (lob_decision == 2)  // Продаем, если решение предполагает продажу
+                        {
+                            ExecuteAction(strategies[currentStrategy].actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
+                        }
+                    else  // Если решение ордербука предполагает "ничего не делать"
+                        {
+                // Действие можно пропустить или дождаться конца свечи, чтобы выполнить по close_price
+                        cout << "Ждем до конца свечи..." << endl;
+                        }
+
+                // Обновляем статус действия как выполненное
+                    strategies[currentStrategy].Actions_completed[builded_Candles_num - 1] = true;
+                    //cout << "PnL: " << PnL << endl;
+                    }
+
+                
+                // -    -   -   -   -   -   -   -   --  -   -   - При соглассии с Analyze.. 
+                // DDDDD
+                // -        -   --  -   -   -   --  -       
+            }
+        }
+
+
+        // Закрытие позиции после окончания симуляции
+        if (!CandlesHistory.empty()) 
+            ClosePosition(CurCandleOf(CandlesHistory));
+    }
+};
+int main()
+{
+    string path_Trade = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_dogeusdt.csv)"; 
+    string path_LOB = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\bbo_dogeusdt.csv)";
+
+    InstrumentData ID0(path_Trade, path_LOB);  
+    vector<int> actions = {1, -2, 0}; 
+    Simulator sim(228232434327, ID0, actions); 
+   
+    sim.IterateData(); 
+    //cout << sim.PnL; 
+    cout << sim.builded_Candles_num << endl; 
+    for(auto it : sim.CandlesHistory)
+    {
+    it.ShowInformation(); 
+        cout << '\n'; 
+    }
+    sim.strategies[0].DataOut();  
+    //for (auto it : sim.Actions_completed) cout << it << "   "; 
+    return 0; 
+}
+//Расчитать все показатели 
