@@ -702,3 +702,122 @@ int main()
     for (auto it : sim.Actions_completed) cout << it << "   "; 
     return 0; 
 }
+
+/*
+#include <vector>
+#include <cmath>
+#include <algorithm>
+
+class Simulator {
+public:
+    struct TradeData {
+        double pnl; // PnL для каждой сделки
+        double holding_time; // Время удержания позиции
+        double position; // Текущая позиция (положительная = покупка, отрицательная = продажа)
+    };
+
+    // Параметры симулятора
+    std::vector<TradeData> trades;
+    double sharpe_ratio = 0;
+    double sortino_ratio = 0;
+    double max_drawdown = 0;
+    double avg_hold_time = 0;
+    int num_pos_flips = 0;
+
+    // Метод для расчета всех необходимых метрик
+    void calculateMetrics() {
+        calculateSharpeRatio();
+        calculateSortinoRatio();
+        calculateMaxDrawdown();
+        calculateAvgHoldTime();
+        calculateNumPosFlips();
+    }
+
+private:
+    // Вычисление Sharpe Ratio
+    void calculateSharpeRatio() {
+        double mean_pnl = 0;
+        double stddev_pnl = 0;
+        for (const auto& trade : trades) {
+            mean_pnl += trade.pnl;
+        }
+        mean_pnl /= trades.size();
+
+        for (const auto& trade : trades) {
+            stddev_pnl += std::pow(trade.pnl - mean_pnl, 2);
+        }
+        stddev_pnl = std::sqrt(stddev_pnl / trades.size());
+
+        if (stddev_pnl != 0) {
+            sharpe_ratio = mean_pnl / stddev_pnl;
+        }
+    }
+
+    // Вычисление Sortino Ratio (учитываем только негативные отклонения)
+    void calculateSortinoRatio() {
+        double mean_pnl = 0;
+        double downside_deviation = 0;
+        for (const auto& trade : trades) {
+            mean_pnl += trade.pnl;
+        }
+        mean_pnl /= trades.size();
+
+        for (const auto& trade : trades) {
+            if (trade.pnl < mean_pnl) {
+                downside_deviation += std::pow(trade.pnl - mean_pnl, 2);
+            }
+        }
+        downside_deviation = std::sqrt(downside_deviation / trades.size());
+
+        if (downside_deviation != 0) {
+            sortino_ratio = mean_pnl / downside_deviation;
+        }
+    }
+
+    // Вычисление максимальной просадки (Max Drawdown)
+    void calculateMaxDrawdown() {
+        double peak = 0;
+        double trough = 0;
+        double max_drawdown_temp = 0;
+
+        double equity = 0; // Считаем прирост капитала со временем
+
+        for (const auto& trade : trades) {
+            equity += trade.pnl;
+
+            if (equity > peak) {
+                peak = equity;
+            }
+
+            trough = std::min(trough, equity);
+
+            max_drawdown_temp = std::max(max_drawdown_temp, peak - trough);
+        }
+
+        max_drawdown = max_drawdown_temp;
+    }
+
+    // Вычисление среднего времени удержания позиции (AvgHoldTime)
+    void calculateAvgHoldTime() {
+        double total_hold_time = 0;
+
+        for (const auto& trade : trades) {
+            total_hold_time += trade.holding_time;
+        }
+
+        avg_hold_time = total_hold_time / trades.size();
+    }
+
+    // Вычисление количества переворотов позиции (NumPosFlips)
+    void calculateNumPosFlips() {
+        double last_position = 0;
+
+        for (const auto& trade : trades) {
+            if ((trade.position > 0 && last_position < 0) || (trade.position < 0 && last_position > 0)) {
+                num_pos_flips++;
+            }
+            last_position = trade.position;
+        }
+    }
+};
+*/
