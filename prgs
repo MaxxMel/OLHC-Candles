@@ -1,25 +1,104 @@
-int AnalyzeKnownLobDataAndMakeDecision() 
-{
-    int period = 7; 
-    // If both bid and ask amounts are growing, it indicates market stability; hold off on trading.
-    if (MidBidAmountIsGrow(mid_bid_amount, period) && MidAskAmountIsGrow(mid_ask_amount, period)) 
-    {
-        return 3;  // Do nothing
-    }
-    // If both bid and ask amounts are dropping, and the market might be unstable:
-    else if (MidBidAmountIsDrop(mid_bid_amount, period) && MidAskAmountIsDrop(mid_ask_amount, period)) 
-    {
-        // If bid prices are growing and ask prices are dropping, it suggests a buying opportunity.
-        if (MidBidPriceIsGrow(mid_bid_price, period) && MidAskPriceIsDrop(mid_ask_price, period)) 
-        {
-            return 1;  // Buy
+#include <vector>
+#include <cmath>
+#include <iostream>
+#include <chrono> // Для учета времени удержания
+
+struct TradingResult {
+    double PnL = 0.0;                      // Совокупный результат по инструменту
+    double TradedVolume = 0.0;              // Общий объем торговли
+    int NumOfPosFlips = 0;                  // Количество изменений позиций
+    std::vector<double> returns;            // Возвраты для расчета Sharpe и Sortino
+    std::vector<double> negativeReturns;    // Только отрицательные возвраты для Sortino
+    std::chrono::milliseconds holdTimeSum;  // Общее время удержания
+    int totalTrades = 0;                    // Общее количество сделок
+    
+    // Добавление сделки и обновление статистики
+    void addTrade(double pnl, double volume, double returnValue, std::chrono::milliseconds holdTime) {
+        PnL += pnl;
+        TradedVolume += volume;
+        returns.push_back(returnValue);
+
+        if (returnValue < 0) {
+            negativeReturns.push_back(returnValue);
         }
-        // If bid prices are dropping and ask prices are growing, it suggests a selling opportunity.
-        else if (MidBidPriceIsDrop(mid_bid_price, period) && MidAskPriceIsGrow(mid_ask_price, period)) 
-        {
-            return 2;  // Sell
+
+        holdTimeSum += holdTime;
+        totalTrades++;
+    }
+
+    // Рассчет среднего времени удержания
+    double getAverageHoldTime() const {
+        if (totalTrades == 0) return 0;
+        return static_cast<double>(holdTimeSum.count()) / totalTrades;
+    }
+
+    // Рассчет Sharpe Ratio
+    double getSharpeRatio() const {
+        if (returns.empty()) return 0;
+
+        double meanReturn = 0;
+        for (double r : returns) {
+            meanReturn += r;
+        }
+        meanReturn /= returns.size();
+
+        double variance = 0;
+        for (double r : returns) {
+            variance += std::pow(r - meanReturn, 2);
+        }
+        variance /= returns.size();
+
+        double stddev = std::sqrt(variance);
+        if (stddev == 0) return 0;
+
+        return meanReturn / stddev;
+    }
+
+    // Рассчет Sortino Ratio
+    double getSortinoRatio() const {
+        if (negativeReturns.empty()) return 0;
+
+        double meanReturn = 0;
+        for (double r : returns) {
+            meanReturn += r;
+        }
+        meanReturn /= returns.size();
+
+        double downsideVariance = 0;
+        for (double r : negativeReturns) {
+            downsideVariance += std::pow(r, 2);
+        }
+        downsideVariance /= negativeReturns.size();
+
+        double downsideDev = std::sqrt(downsideVariance);
+        if (downsideDev == 0) return 0;
+
+        return meanReturn / downsideDev;
+    }
+};
+
+// Основной класс стратегии для многократных инструментов
+class MultiInstrumentStrategy {
+public:
+    std::unordered_map<std::string, TradingResult> results;
+
+    // Функция выполнения сделки с расчетом метрик
+    void ExecuteAction(const std::string& instrumentName, double pnl, double volume, std::chrono::milliseconds holdTime, double initialPrice, double finalPrice) {
+        double returnValue = (finalPrice - initialPrice) / initialPrice;  // Рассчет возврата
+
+        // Учет сделки
+        results[instrumentName].addTrade(pnl, volume, returnValue, holdTime);
+    }
+
+    // Вывод всех результатов, включая метрики Sharpe, Sortino и Average Holding Time
+    void displayAllResults() {
+        for (const auto& [name, result] : results) {
+            std::cout << "Instrument: " << name << "\n";
+            std::cout << "PnL: " << result.PnL << "\n";
+            std::cout << "Volume: " << result.TradedVolume << "\n";
+            std::cout << "Sharpe Ratio: " << result.getSharpeRatio() << "\n";
+            std::cout << "Sortino Ratio: " << result.getSortinoRatio() << "\n";
+            std::cout << "Average Holding Time: " << result.getAverageHoldTime() << " ms\n\n";
         }
     }
-    // Otherwise, do nothing by default
-    return 3;  // Do nothing
-}
+};
