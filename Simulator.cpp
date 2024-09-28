@@ -12,6 +12,8 @@
 #include <chrono>
 #include <unordered_map>
 #include <iomanip>
+#include <utility>  
+#include <random>
 
 using namespace std; 
 using namespace std::chrono;
@@ -23,7 +25,8 @@ struct Trade
     bool side; // 1 - buy 
     double price;
     int amount;
-};  
+}; 
+
 struct LOB
 {
     uint64_t local_timestamp; 
@@ -36,7 +39,6 @@ struct LOB
     int Imbalance; 
 
 };
-
 Trade parseStringTrade(const string& input) {
     Trade trade;
     istringstream iss(input);
@@ -44,7 +46,7 @@ Trade parseStringTrade(const string& input) {
     if (getline(iss, token, ',')) {
         trade.local_timestamp = stoull(token); 
     }
-
+// <trafde>, t
     
     if (getline(iss, token, ',')) {
         if (token == "buy") {
@@ -80,7 +82,7 @@ LOB parseStringLOB(const string& input)
         lob.ask_price = stod(token); 
     }
     if (getline(iss, token, ',')){
-        lob.bid_price = stod(token); 
+        lob.bid_price = stod(token);  
     }
     if (getline(iss, token, ',')){
         lob.bid_amount = stod(token); 
@@ -274,9 +276,6 @@ class Candle
     }
     
 }; 
-//  -   -   --  -   -   -   -   -   -   --  -   -   -   -   -   -
-// DEFAULT
-// -    -   -   -   -   -   --  -   -   -   -   -   -   -   --  -   
 
 bool MidBidAmountIsDrop(vector<double> Amid_bid_amount, int period)
 {
@@ -492,7 +491,7 @@ struct knownLobHistory
     int AnalyzeKnownLobDataAndMakeDecision() // Анализ инфы и принятие решения покупать сейчас или нет //возвращает код
     // 1- покупать 2 - продавать 3 - ничего не делать на данной итерации 
     {
-        int period (15); 
+        int period (25); 
         if (MidBidAmountIsGrow(mid_bid_amount, period) && MidAskAmountIsGrow(mid_ask_amount, period)) // логика есл и растет объем и ask и bid // рынок стабилен // цена сильно не поменяется 
             {
                 return 3;
@@ -527,145 +526,353 @@ struct knownLobHistory
     return 3;
     }
 };
+/*
 struct StrategyAndFinancialData
 {
     double PnL = 0; 
-    double TradedVolume = 0;
-
-    double Rp = 0;
-    double Rf = PnL / 52; 
-    double Op = -1.2; 
-    double Od = -1/ 1.2; 
-
-    double SharpeRatio;// = (PnL - Rf) / Op; 
-
-
-    double SortinoRatio = 0; 
+    double tradedVolume = 0; 
     double maxDrawDown = 100000000; 
-    double AvgHoldTime = 0;
-    int NumPosFlips = 0;
-    
-    vector<double> returns;
-    vector<double> negative_returns;
-    double previous_pnl = 0.0;
-    double peak_pnl = 0.0;
-    double holding_time_sum = 0.0;
-    int position_changes = 0;
-   
-    double lastActionTime = 0.0;
-
-
-    double current_position = 0;  
-    double position_open_price = 0;
-
-    vector<int> actions;
+    vector<int> actions; 
     vector<bool> Actions_completed; 
-    StrategyAndFinancialData(vector<int> actions_) : actions(actions_ )
-    {
-        for (int i(0); i < actions.size(); i++) Actions_completed.push_back(false);  
-    }
+    double CurAmountOfStuff; 
+    vector<double> PnL_History; 
+    //vector<double> Delta_PnL; 
+    vector<double> Rn; 
+    double Rf = 0.02; 
+    double Rp; 
+    double SumR; 
+    double countR = 0; 
+    double Deviation = 0; 
 
-    void CalMaxDrawDown(double CurPnL)
+    double SortinoRatio; 
+
+    // UPD
+    vector<double> returns; 
+    double total_PnL = 0.0;  
+    double mean_return = 0.0; 
+    double stddev_return = 0.0;               // Стандартное отклонение доходностей
+    double SharpeRatio = 0.0;  
+
+    StrategyAndFinancialData(vector<int> actions_) : actions(actions_)
+    {
+        //for (int i(0); i < actions.size(); i++) Actions_completed.push_back(false);
+         Actions_completed.resize(actions.size(), false);
+        for (auto it : actions)
+        {
+            if (it < 0) tradedVolume-=it; 
+            else tradedVolume += it; 
+        }
+         returns.resize(actions.size(), 0.0); 
+    }
+    void CalcMaxDrawDown(double CurPnL)
     {
         if (maxDrawDown > CurPnL) maxDrawDown = CurPnL; 
     }
-    void UpdSharpeSortinoRatio()
-    {
-        Rf = PnL / 53;
-        SharpeRatio = (PnL - Rf) / Op; 
-        SortinoRatio = (PnL - Rf) / Od; 
-    }
     
 
-    void DataOut()
-    {
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "Strategy and Financial Data:\n";
-        std::cout << "PnL: " << PnL << "\n";
-        std::cout << "Traded Volume: " << TradedVolume << "\n";
-        std::cout << "Sharpe Ratio: " << SharpeRatio << "\n";
-        std::cout << "Sortino Ratio: " << SortinoRatio << "\n";
-        std::cout << "Max Drawdown: " << maxDrawDown << "\n";
-        std::cout << "Average Hold Time: " << AvgHoldTime << "\n";
-        std::cout << "Number of Position Flips: " << NumPosFlips << "\n";
+    void CalculateSharpeRatio() {
+        if (returns.empty()) return;
+
+        // Вычисление средней доходности
+        mean_return = accumulate(returns.begin(), returns.end(), 0.0) / returns.size();
+
+        // Вычисление стандартного отклонения
+        double variance = 0.0;
+        for (double r : returns) {
+            variance += pow(r - mean_return, 2);
+        }
+        stddev_return = sqrt(variance / returns.size());
+
+        // Для простоты считаем, что безрисковая ставка (Rf) = 0
+        if (stddev_return > 0) {
+            SharpeRatio = mean_return / stddev_return;
+        } else {
+            SharpeRatio = 0;  // Если стандартное отклонение равно нулю
+        }
     }
     
+    void ShowStatistics() {
+        cout << "Total PnL: " << total_PnL << endl;
+        cout << "Mean Return: " << mean_return << endl;
+        cout << "Standard Deviation of Return: " << stddev_return << endl;
+        cout << "Sharpe Ratio: " << SharpeRatio << endl;
+    }
+
+}; */
+struct StrategyAndFinancialData
+{
+    double PnL = 0; 
+    double tradedVolume = 0; 
+    double maxDrawDown = 100000000; 
+    vector<int> actions; 
+    vector<bool> Actions_completed; 
+    double CurAmountOfStuff = 0; // Инициализируем нулем
+    vector<double> PnL_History; 
+    vector<double> Rn; 
+    double Rf = 0.02; 
+    double Rp = 0; // Инициализируем нулем
+    double SumR = 0; 
+    double countR = 0; 
+    double Deviation = 0; 
+    double SortinoRatio = 0; 
+    double PNL; 
+
+
+    vector<double> returns; 
+    double total_PnL = 0.0;  
+    double mean_return = 0.0; 
+    double stddev_return = 0.0;               
+    double SharpeRatio = 0.0;  
+
+    // Конструктор
+    StrategyAndFinancialData(vector<int> actions_) : actions(actions_)
+    {
+        Actions_completed.resize(actions.size(), false);
+        returns.resize(actions.size(), 0.0);
+
+        // Обновляем объем торговли (tradedVolume)
+        for (auto it : actions)
+        {
+            if (it < 0) tradedVolume -= it; 
+            else tradedVolume += it; 
+        }
+    }
+
+    // Метод для расчета максимальной просадки
+    void CalcMaxDrawDown(double CurPnL)
+    {
+        if (maxDrawDown > CurPnL) 
+            maxDrawDown = CurPnL; 
+    }
+
+    // Метод для расчета Sharpe Ratio
+    void CalculateSharpeRatio() 
+    {
+        if (returns.empty()) return;
+
+        // Вычисляем среднюю доходность
+        mean_return = accumulate(returns.begin(), returns.end(), 0.0) / returns.size();
+
+        // Вычисляем стандартное отклонение
+        double variance = 0.0;
+        for (double r : returns) {
+            variance += pow(r - mean_return, 2);
+        }
+        stddev_return = sqrt(variance / returns.size());
+
+        // Если стандартное отклонение > 0, вычисляем Sharpe Ratio
+        if (stddev_return > 0) {
+            SharpeRatio = (mean_return - Rf) / stddev_return;
+        } else {
+            SharpeRatio = 0; // Если стандартное отклонение равно нулю
+        }
+    }
+    
+    // Вывод статистики
+    void ShowStatistics() 
+    {
+        //cout << "Total PnL: " << PnL << endl;
+        cout << "Total PnL: " << PNL << endl;
+        cout << "Sharpe Ratio: " << SharpeRatio << endl;
+        cout << "Sortino Ratio " << SortinoRatio << endl;  
+        cout << "Traded Volume: " << tradedVolume << endl; 
+    }
+
+    // Обновление данных после действия
+    void UpdateAfterAction(double Rcur, double sell_price)
+    {
+        PnL += Rcur; // Обновляем текущий PnL
+        PnL_History.push_back(PnL); // Добавляем PnL в историю
+
+        // Обновляем доходности
+        Rn.push_back(Rcur);
+        SumR += Rcur;
+        countR++;
+
+        // Средняя доходность
+        Rp = SumR / countR;
+
+        // Обновление отклонения и Sortino Ratio
+        if (Rcur < 0) 
+            Deviation += Rcur * Rcur;
+
+        if (Deviation > 0) 
+            SortinoRatio = (Rp - Rf) / sqrt(Deviation);
+        else 
+            SortinoRatio = 0;
+
+        // Обновляем Sharpe Ratio
+        CalculateSharpeRatio();
+    }
 };
+
 
 class Simulator 
 {
-public: 
-    vector<StrategyAndFinancialData> strategies;  
-    int currentStrategy = 0; 
-    vector <InstrumentData> Portfel; 
-    int curInstrument = 0;
-
-    uint64_t T; 
+    public: 
+    StrategyAndFinancialData strategy; 
     InstrumentData ID; 
-    
-    
-    vector<Candle> CandlesHistory; 
+    uint64_t T; 
+    vector <Candle> CandlesHistory; 
     vector<uint64_t> Candles_Boarder_Timestamps; 
     int builded_Candles_num = 0; 
+    vector <pair<int, double> > data_about_actions; 
+     
+
     knownLobHistory orderbook; 
 
+    Simulator(uint64_t T, InstrumentData ID_, vector<int> actions_)
+    : T(T), ID(ID_), strategy(StrategyAndFinancialData(actions_))
+    {
+       // strategy(actions_); 
+    }
 
-    Simulator(uint64_t T, vector <InstrumentData>& Portfel_, int index_of_ins,  vector<int> actions_) 
-        : T(T), ID(Portfel_[index_of_ins])
-        {
-        strategies.push_back(StrategyAndFinancialData (actions_)); 
+    void IdealTradingStrategy(Candle& candle) {
+        // Покупка по минимальной цене свечки
+        int buy_amount = 1; // Например, покупаем 1 единицу
+        ExecuteAction(buy_amount, candle, false); // Покупаем по минимальной цене
+
+        // Продаем по максимальной цене свечи
+        int sell_amount = -1; // Продаем 1 единицу
+        candle.avg_sell_price = candle.high_price; // Используем максимальную цену как цену продажи
+        ExecuteAction(sell_amount, candle, false); // Продаем по максимальной цене
+    }
+    void RandomTradingStrategy(Candle& candle) {
+        // Генерация случайного действия
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distr(0, 2); // 0 - ничего не делать, 1 - покупка, 2 - продажа
+
+        int action = distr(gen);
+        if (action == 1) {
+            // Покупка
+            int buy_amount = 1; 
+            ExecuteAction(buy_amount, candle, false);
+        } else if (action == 2) {
+            // Продажа
+            int sell_amount = -1; 
+            ExecuteAction(sell_amount, candle, false);
         }
+        // Если action == 0, не делаем ничего
+    }
+
 
     Candle& CurCandleOf(vector <Candle>& CandlesHistory)
     {
-        return CandlesHistory.back();
+        return CandlesHistory.back(); 
     }
-    void AddStrategy(vector<int> actions_)
-        {
-            strategies.push_back(StrategyAndFinancialData (actions_)); 
-            currentStrategy++; 
-        }
-    void ExecuteAction(int action, const Candle& candle)
-    {
-        if (action > 0)  // Покупка
-        {
-            // Обновляем PnL для новой покупки
-            strategies[currentStrategy].PnL -= action * candle.avg_buy_price;  // Тратим деньги на покупку
-            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL); 
-            strategies[currentStrategy].UpdSharpeSortinoRatio(); 
-
-            strategies[currentStrategy].TradedVolume += action;  // Увеличиваем объём торговли
-            strategies[currentStrategy].current_position += action;  // Увеличиваем текущую позицию
-            strategies[currentStrategy].position_open_price = candle.avg_buy_price;  // Обновляем цену открытия
-        }
-        else if (action < 0)  // Продажа
-        {
-            // Обновляем PnL при продаже
-            strategies[currentStrategy].PnL += (-action) * candle.avg_sell_price;  // Получаем прибыль от продажи
-            strategies[currentStrategy].UpdSharpeSortinoRatio(); 
-            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL); 
-
-            strategies[currentStrategy].TradedVolume += (-action);  // Увеличиваем объём торговли
-            strategies[currentStrategy].current_position += action;  // Закрываем часть или всю позицию
-
-
-        }
-    }
- 
-   
 
     void ClosePosition(const Candle& candle)
     {
-        if (strategies[currentStrategy].current_position != 0) 
-        {
-            strategies[currentStrategy].PnL += strategies[currentStrategy].current_position * candle.close_price;  
-            strategies[currentStrategy].CalMaxDrawDown(strategies[currentStrategy].PnL);
-            strategies[currentStrategy].UpdSharpeSortinoRatio(); 
-
-            strategies[currentStrategy].current_position = 0;  // Сбрасываем позицию
-        }
+        
     }
 
+    void ExecuteAction(int action, const Candle& candle, bool IsClosePrice) 
+    {
+        if (IsClosePrice) 
+        {
+            if (action > 0)
+            {
+            pair<int, double> temp; 
+            temp.first = action; 
+            temp.second = candle.close_price; 
+            data_about_actions.push_back(temp);  
+            strategy.CalcMaxDrawDown(strategy.PnL); 
+        } 
+        else if (action < 0)
+        {
+            if (!data_about_actions.empty())
+            {
+                double Rcur = (candle.avg_sell_price - data_about_actions.back().second) / data_about_actions.back().second; 
+                strategy.PnL += (candle.avg_sell_price - data_about_actions.back().second) * -action; 
+                strategy.PNL += (candle.avg_sell_price - data_about_actions.back().second) * action; 
+
+                strategy.PnL_History.push_back(strategy.PnL); 
+                strategy.Rn.push_back(Rcur);
+                strategy.SumR += Rcur; 
+                strategy.countR++; 
+                strategy.Rp = strategy.SumR / strategy.countR; 
+
+                if (Rcur < 0) 
+                    strategy.Deviation += Rcur * Rcur; // Корректное накопление отклонения
+
+                strategy.SortinoRatio = (strategy.Rp - strategy.Rf) / sqrt(strategy.Deviation); // Корректное вычисление
+
+                // Добавляем расчет Sharpe Ratio
+                double meanR = strategy.Rp; // Средняя доходность
+                double stddevR = sqrt(strategy.Deviation / strategy.countR); // Стандартное отклонение доходностей
+
+                if (stddevR > 0) 
+                    strategy.SharpeRatio = (meanR - strategy.Rf) / stddevR;
+                else 
+                    strategy.SharpeRatio = 0; // Если стандартное отклонение 0, то Sharpe Ratio = 0
+
+                pair<int, double> temp; 
+                temp.first = action; 
+                temp.second = candle.avg_sell_price; 
+                data_about_actions.push_back(temp); 
+            } 
+            else 
+            {
+                // Обработка случая, когда нет данных в data_about_actions
+                cerr << "Error: No previous buy action recorded!" << endl;
+            }
+        }
+        return; 
+    }
+
+    strategy.CurAmountOfStuff += action;
+    if (action > 0)
+    {
+        pair<int, double> temp; 
+        temp.first = action; 
+        temp.second = candle.avg_buy_price; 
+        data_about_actions.push_back(temp);  
+        strategy.CalcMaxDrawDown(strategy.PnL); 
+    }
+
+    if (action < 0)
+    {
+        if (!data_about_actions.empty())
+        {
+            double Rcur = (candle.avg_sell_price - data_about_actions.back().second) / data_about_actions.back().second; 
+            strategy.PnL += (candle.avg_sell_price - data_about_actions.back().second) * -action; 
+            strategy.PNL += (candle.avg_sell_price - data_about_actions.back().second) * action; 
+            strategy.PnL_History.push_back(strategy.PnL); 
+            strategy.Rn.push_back(Rcur);
+            strategy.SumR += Rcur; 
+            strategy.countR++; 
+            strategy.Rp = strategy.SumR / strategy.countR; 
+
+            if (Rcur < 0) 
+                strategy.Deviation += Rcur * Rcur; // Корректное накопление отклонения
+
+            strategy.SortinoRatio = (strategy.Rp - strategy.Rf) / sqrt(strategy.Deviation); // Корректное вычисление
+
+            // Добавляем расчет Sharpe Ratio
+            double meanR = strategy.Rp; // Средняя доходность
+            double stddevR = sqrt(strategy.Deviation / strategy.countR); // Стандартное отклонение доходностей
+
+            if (stddevR > 0) 
+                strategy.SharpeRatio = (meanR - strategy.Rf) / stddevR;
+            else 
+                strategy.SharpeRatio = 0; // Если стандартное отклонение 0, то Sharpe Ratio = 0
+
+            pair<int, double> temp; 
+            temp.first = action; 
+            temp.second = candle.avg_sell_price; 
+            data_about_actions.push_back(temp); 
+        } 
+        else 
+        {
+            // Обработка случая, когда нет данных в data_about_actions
+            cerr << "Error: No previous buy action recorded!" << endl;
+        }
+    }
+    strategy.ShowStatistics(); 
+    } 
+
+    
     void IterateData()
     {
         for (auto current_comb : ID.fullSortedData)
@@ -685,12 +892,11 @@ public:
                     CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
                     builded_Candles_num++; 
 
-                    if (!strategies[currentStrategy].Actions_completed[builded_Candles_num - 1])
+                    if (!strategy.Actions_completed[builded_Candles_num - 1])
                     {
-                        int act_inf = strategies[currentStrategy].actions[builded_Candles_num - 1]; 
-                        strategies[currentStrategy].Actions_completed[builded_Candles_num - 1] = true; 
-                        ExecuteAction(act_inf, CurCandleOf(CandlesHistory));
-                        cout << "PnL: " << strategies[currentStrategy].PnL << endl; 
+                        int act_inf = strategy.actions[builded_Candles_num - 1]; 
+                        strategy.Actions_completed[builded_Candles_num - 1] = true; 
+                        ExecuteAction(act_inf, CurCandleOf(CandlesHistory), true); 
                     }
                 }
                 else
@@ -699,62 +905,75 @@ public:
                     if (CurCandleOf(CandlesHistory).isFinished) 
                         Candles_Boarder_Timestamps.push_back(CurCandleOf(CandlesHistory).expected_close_time); 
                 }
-            } 
-            else  // Обработка если это LOB
+            }
+            else
             {
                 LOB curLobData = current_comb.lob; 
                 orderbook.update(curLobData); 
-
-                
-                // Вставляем вместо //VVV
-                if (!strategies[currentStrategy].Actions_completed[builded_Candles_num - 1])
-                    {
+                if (builded_Candles_num - 1 < strategy.Actions_completed.size() && 
+            !strategy.Actions_completed[builded_Candles_num - 1])
+                {
                     // Получаем решение на основе данных из ордербука
                     int lob_decision = orderbook.AnalyzeKnownLobDataAndMakeDecision();
+                    
 
                     // Пример того, как можно использовать решение:
                     if (lob_decision == 1)  // Покупаем, если решение ордербука предполагает покупку
                         {
-                            ExecuteAction(strategies[currentStrategy].actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
+                            ExecuteAction(strategy.actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory), false);
                         }
                     else if (lob_decision == 2)  // Продаем, если решение предполагает продажу
                         {
-                            ExecuteAction(strategies[currentStrategy].actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory));
+                            ExecuteAction(strategy.actions[builded_Candles_num - 1], CurCandleOf(CandlesHistory), false);
                         }
                     else  // Если решение ордербука предполагает "ничего не делать"
                         {
                 // Действие можно пропустить или дождаться конца свечи, чтобы выполнить по close_price
                         cout << "Ждем до конца свечи..." << endl;
                         }
-
-                // Обновляем статус действия как выполненное
-                    strategies[currentStrategy].Actions_completed[builded_Candles_num - 1] = true;
-                    //cout << "PnL: " << PnL << endl;
-                    }
-
-                
-                // -    -   -   -   -   -   -   -   --  -   -   - При соглассии с Analyze.. 
-                // DDDDD
-                // -        -   --  -   -   -   --  -       
+                    strategy.Actions_completed[builded_Candles_num - 1] = true; 
+                }
             }
+
         }
-
-
-        // Закрытие позиции после окончания симуляции
         if (!CandlesHistory.empty()) 
             ClosePosition(CurCandleOf(CandlesHistory));
     }
+
+    
 };
+
+// добавить идеальный режим 
+// добавить случайную выборку
+vector<int> generateRandomStrat(int length, int min, int max) {
+    // Создание генератора случайных чисел
+    random_device rd;  // Инициализация генератора из устройства
+    mt19937 generator(rd());  // Использование Mersenne Twister
+    uniform_int_distribution<int> distribution(min, max);  // Равномерное распределение
+
+    vector<int> randomNumbers;  // Вектор для хранения случайных чисел
+    randomNumbers.reserve(length);  // Резервируем место в векторе
+
+    // Заполнение вектора случайными числами
+    for (int i = 0; i < length; ++i) {
+        randomNumbers.push_back(distribution(generator));  // Генерация случайного числа и добавление в вектор
+    }
+
+    return randomNumbers;  // Возвращаем вектор со случайными числами
+}
+
 int main()
 {
     string path_Trade = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\trades_dogeusdt.csv)"; 
     string path_LOB = R"(C:\Users\Maxim\OneDrive\Рабочий стол\CMF\Task1\bbo_dogeusdt.csv)";
 
     InstrumentData ID0(path_Trade, path_LOB);  
-    vector<int> actions = {1, -2, 0}; 
-    vector <InstrumentData> instruments;
-    instruments.push_back(ID0);
-    Simulator sim(228232434327,  instruments, 0,  actions); 
+
+    vector<int> actions = {3, -2, 0, 9, -4, 3, 5, -4, 0, 5, 4, 7,  3, -2, 0, 9, -4, 3, 5, -4, 0, 5, 4, 7, 3, -2, 0, 9}; 
+    vector<int> RandomActions = generateRandomStrat(28, -9, 9); 
+    //vector <InstrumentData> instruments;
+   // instruments.push_back(ID0);
+    Simulator sim(22243243427, ID0, actions); // actions
    
     sim.IterateData(); 
     cout << sim.builded_Candles_num << endl; 
@@ -763,8 +982,10 @@ int main()
     it.ShowInformation(); 
         cout << '\n'; 
     }
-    sim.strategies[0].DataOut();  
+    
+    //im.strategies[0].DataOut();  
     //for (auto it : sim.Actions_completed) cout << it << "   "; 
+    sim.strategy.ShowStatistics(); 
     return 0; 
 }
 
