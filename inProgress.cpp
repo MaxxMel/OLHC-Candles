@@ -263,6 +263,7 @@ class Candle
 
     
     }
+    
 
     void ShowInformation() const {
         cout << "Open price: " << open_price << "\n";
@@ -558,7 +559,7 @@ struct StrategyAndFinancialData
     {
         Actions_completed.resize(actions.size(), false);
         returns.resize(actions.size(), 0.0);
-
+        
         // Обновляем объем торговли (tradedVolume)
         int CurTrVol = 0; 
         for (auto it : actions)
@@ -569,6 +570,7 @@ struct StrategyAndFinancialData
             if (it < 0) tradedVolume -= it; 
             else tradedVolume += it; 
         }
+        
     }
 
     // Метод для расчета максимальной просадки
@@ -646,6 +648,7 @@ class Simulator
 {
     public: 
     StrategyAndFinancialData strategy; 
+     
     InstrumentData ID; 
     uint64_t T; 
     vector <Candle> CandlesHistory; 
@@ -661,6 +664,7 @@ class Simulator
     {
        // strategy(actions_); 
     }
+    
 
     void IdealTradingStrategy(Candle& candle) {
         // Покупка по минимальной цене свечки
@@ -814,7 +818,7 @@ class Simulator
         {
             if (current_comb.is_trade)
             {
-                if (CandlesHistory.empty()) 
+                 if (CandlesHistory.empty()) 
                 {
                     CandlesHistory.push_back(Candle(current_comb.local_timestamp, T)); 
                     CurCandleOf(CandlesHistory).editCandleByTrade(current_comb.trade); 
@@ -846,7 +850,7 @@ class Simulator
                 LOB curLobData = current_comb.lob; 
                 orderbook.update(curLobData); 
                 if (builded_Candles_num - 1 < strategy.Actions_completed.size() && 
-            !strategy.Actions_completed[builded_Candles_num - 1])
+                !strategy.Actions_completed[builded_Candles_num - 1])
                 {
                     // Получаем решение на основе данных из ордербука
                     int lob_decision = orderbook.AnalyzeKnownLobDataAndMakeDecision();
@@ -869,31 +873,124 @@ class Simulator
                     strategy.Actions_completed[builded_Candles_num - 1] = true; 
                 }
             }
-
         }
         if (!CandlesHistory.empty()) 
             ClosePosition(CurCandleOf(CandlesHistory));
     }
-
-    
 };
 
 
-vector<int> generateRandomStrat(int length, int min, int max) {
-    random_device rd;  // Инициализация генератора из устройства
-    mt19937 generator(rd()); 
-    uniform_int_distribution<int> distribution(min, max);  // Равномерное распределение
+vector<int> generateRandomStrat(int length, int min, int max);
 
-    vector<int> randomNumbers;  
-    randomNumbers.reserve(length);  // Резервируем место в векторе
+class PerfectStrategySimulator
+{
+    public: 
+    vector<int> actions; 
+    StrategyAndFinancialData strategy; 
+    InstrumentData ID_p;
+    uint64_t T; 
+    vector<Candle> CandlesHistoryP;
 
-    // Заполнение вектора случайными числами
-    for (int i = 0; i < length; ++i) {
-        randomNumbers.push_back(distribution(generator));  // Генерация случайного числа и добавление в вектор
+    int builded_Candles_num; 
+    vector <pair <int, double> > data_about_actions; 
+
+    PerfectStrategySimulator(uint64_t T_, InstrumentData ID_p_, vector<int> acts) : actions(acts),
+     T(T_), strategy(StrategyAndFinancialData(acts)), ID_p(ID_p_) 
+    {}
+
+    Candle& CurCandleOf(vector <Candle>& CandlesHistory)
+    {
+        return CandlesHistory.back(); 
+    }
+   void ExecuteAction(int action, const Candle& candle) 
+    {
+    strategy.CurAmountOfStuff += action;
+    if (action > 0)
+    {
+        pair<int, double> temp; 
+        temp.first = action; 
+        temp.second = candle.low_price; 
+        data_about_actions.push_back(temp);  
+        strategy.CalcMaxDrawDown(strategy.PnL); 
     }
 
-    return randomNumbers;  
-}
+    if (action < 0)
+    {
+        if (!data_about_actions.empty())
+        {
+            double Rcur = (candle.high_price - data_about_actions.back().second) / data_about_actions.back().second; 
+            strategy.PnL += (candle.high_price - data_about_actions.back().second) * -action; 
+            strategy.PNL += (candle.high_price - data_about_actions.back().second) * action; 
+            strategy.PnL_History.push_back(strategy.PnL); 
+            strategy.Rn.push_back(Rcur);
+            strategy.SumR += Rcur; 
+            strategy.countR++; 
+            strategy.Rp = strategy.SumR / strategy.countR; 
+
+            if (Rcur < 0) 
+                strategy.Deviation += Rcur * Rcur; // Корректное накопление отклонения
+
+            strategy.SortinoRatio = (strategy.Rp - strategy.Rf) / sqrt(strategy.Deviation); // Корректное вычисление
+
+            // Добавляем расчет Sharpe Ratio
+            double meanR = strategy.Rp; // Средняя доходность
+            double stddevR = sqrt(strategy.Deviation / strategy.countR); // Стандартное отклонение доходностей
+
+            if (stddevR > 0) 
+                strategy.SharpeRatio = (meanR - strategy.Rf) / stddevR;
+            else 
+                strategy.SharpeRatio = 0; // Если стандартное отклонение 0, то Sharpe Ratio = 0
+
+            pair<int, double> temp; 
+            temp.first = action; 
+            temp.second = candle.high_price; 
+            data_about_actions.push_back(temp); 
+        } 
+        else 
+        {
+            // Обработка случая, когда нет данных в data_about_actions
+            cerr << "Error: No previous buy action recorded!" << endl;
+        }
+    }
+    strategy.ShowStatistics(); 
+    } 
+
+    
+    void BuildCandles()
+    {
+        for (const auto iterable : ID_p.Trades)
+        {
+             if (CandlesHistoryP.empty()) 
+                {
+                    CandlesHistoryP.push_back(Candle(iterable.local_timestamp, T)); 
+                    CurCandleOf(CandlesHistoryP).editCandleByTrade(iterable); 
+                    builded_Candles_num++; 
+                }
+            else if (CurCandleOf(CandlesHistoryP).isFinished)
+                {
+                    CandlesHistoryP.push_back(Candle(CurCandleOf(CandlesHistoryP).expected_close_time, T)); 
+                    CurCandleOf(CandlesHistoryP).editCandleByTrade(CandlesHistoryP[CandlesHistoryP.size() - 2].last_trade); 
+                    CurCandleOf(CandlesHistoryP).editCandleByTrade(iterable); 
+                    builded_Candles_num++; 
+                }
+            else
+                {
+                    CurCandleOf(CandlesHistoryP).editCandleByTrade(iterable);
+                }
+        }
+    }
+    void ExecuteData()
+    {
+        int CurCaNum = 0; 
+        for (auto CanObj : CandlesHistoryP)
+        {
+            int action = actions[CurCaNum]; 
+            ExecuteAction(action, CanObj);
+            CurCaNum++; 
+        }
+    }
+}; 
+
 
 int main()
 {
@@ -911,7 +1008,19 @@ int main()
     //cout << endl; 
 
     Simulator sim(22243243427, ID0, actions); // actions
-   
+    PerfectStrategySimulator PerfectSim(22243243427,ID0, actions); 
+    PerfectSim.BuildCandles(); 
+    vector<Candle> CandleStor = PerfectSim.CandlesHistoryP;  
+
+   // cout << PerfectSim.builded_Candles_num <<endl;
+    //for(auto it : PerfectSim.CandlesHistoryP)
+   // {
+   // it.ShowInformation(); 
+   //     cout << '\n'; 
+   // }
+    //PerfectSim.strategy.ShowStatistics(); 
+
+  
     sim.IterateData(); 
     cout << sim.builded_Candles_num << endl; 
     for(auto it : sim.CandlesHistory)
@@ -923,5 +1032,24 @@ int main()
     //im.strategies[0].DataOut();  
     //for (auto it : sim.Actions_completed) cout << it << "   "; 
     sim.strategy.ShowStatistics(); 
+ 
     return 0; 
+}
+
+
+
+
+vector<int> generateRandomStrat(int length, int min, int max) {
+    random_device rd;  
+    mt19937 generator(rd()); 
+    uniform_int_distribution<int> distribution(min, max);  // Равномерное распределение
+
+    vector<int> randomNumbers;  
+    randomNumbers.reserve(length);  
+
+    for (int i = 0; i < length; ++i) {
+        randomNumbers.push_back(distribution(generator));  
+    }
+
+    return randomNumbers;  
 }
